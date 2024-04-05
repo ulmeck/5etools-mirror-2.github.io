@@ -1,0 +1,33 @@
+@use "vars";
+
+@mixin mix-source-color ($rgb) {
+	color: $rgb !important;
+	border-color: $rgb !important;
+	text-decoration-color: $rgb !important;
+}
+
+.night-mode .source {
+	$rgb-source-PHB: vars.$rgb-subclass--night;
+	$rgb-source-SADS: #4f63f5;
+	$rgb-source-PSA: #eec276;
+
+	&__ {
+		&PHB {
+			@include mix-source-color($rgb-source-PHB);
+		}
+
+		&SADS {
+			@include mix-source-color($rgb-source-SADS);
+		}
+
+		&PSA {
+			@include mix-source-color($rgb-source-PSA);
+		}
+	}
+}
+
+.night-mode .ve-source-marker {
+	&--partnered {
+		color: #27ac8c;
+	}
+}

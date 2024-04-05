@@ -1,0 +1,229 @@
+@use "includes/vars";
+
+.mon__ {
+	&wrp-size-type-align--token,
+	&wrp-avoid-token {
+		max-width: calc(100% - 11rem);
+	}
+
+	&wrp-token {
+		display: block;
+		position: absolute;
+		z-index: vars.$z-token-image;
+		top: 0;
+		right: 0.5rem;
+		width: auto;
+		max-width: 11rem;
+		height: auto;
+		transition:
+			opacity vars.$time-2-frames,
+			max-width vars.$time-2-frames,
+			right vars.$time-2-frames;
+
+		&:hover {
+			max-width: 100%;
+			right: 0;
+			opacity: 1 !important;
+			transition:
+				opacity vars.$time-2-frames,
+				max-width vars.$time-2-frames,
+				right vars.$time-2-frames;
+
+			.mon__btn-token-cycle {
+				opacity: 1;
+				transition: opacity vars.$time-2-frames;
+			}
+
+			.mon__wrp-token-footer {
+				opacity: 1;
+				transition: opacity vars.$time-2-frames;
+			}
+		}
+	}
+
+	&token {
+		width: 100%;
+		height: 100%;
+	}
+
+	&btn-token-cycle {
+		position: absolute;
+		top: 50%;
+		bottom: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		background: vars.$rgb-shadow-grey--dark;
+		cursor: pointer;
+		color: #fff;
+		border: 1px solid vars.$rgb-border-grey--trans;
+		opacity: 0;
+		transition: opacity vars.$time-2-frames;
+
+		&--left {
+			left: 0;
+			border-top-left-radius: 5px;
+			border-bottom-left-radius: 5px;
+			border-right: 1px solid vars.$rgb-border-grey--trans-muted;
+		}
+
+		&--right {
+			right: 0;
+			border-top-right-radius: 5px;
+			border-bottom-right-radius: 5px;
+			border-left: 1px solid vars.$rgb-border-grey--trans-muted;
+		}
+
+		&:hover {
+			color: #ddd;
+		}
+	}
+
+	&wrp-token-footer {
+		display: flex;
+		position: absolute;
+		height: 22px;
+		right: 5px;
+		bottom: 0;
+		left: 5px;
+		align-items: center;
+		justify-content: center;
+		opacity: 0;
+		transition: opacity vars.$time-2-frames;
+	}
+
+	&token-footer {
+		background: vars.$rgb-shadow-grey--dark;
+		color: #fff;
+		font-family: "Times New Roman", serif;
+		font-variant: small-caps;
+		font-size: 16px;
+		border-radius: 5px;
+		padding: 1px 5px;
+		border: 1px solid vars.$rgb-border-grey--trans;
+	}
+}
+
+// region Token
+img.token {
+	font-size: 1.6em;
+	right: 0.4em;
+}
+// endregion
+
+// region Custom statblock styling
+#pagecontent .rnd-name .source {
+	position: relative;
+	margin-right: 0.2em;
+}
+
+#pagecontent {
+	background:
+		url("../img/bestiary/stat-block-top-texture.webp") no-repeat,
+		repeat top center,
+		vars.$rgb-bg-orange;
+}
+
+.night-mode {
+	#pagecontent {
+		background: vars.$rgb-bg--night !important;
+	}
+}
+// endregion
+
+// region Proficiency dice rollers
+[data-proficiency-dice-mode="dice"] {
+	.rd__dc--rollable {
+		color: vars.$rgb-link-blue;
+		cursor: pointer;
+	}
+
+	.rd__dc--rollable-text,
+	.rd__roller--roll-prof-bonus {
+		display: none;
+	}
+
+	.rd__dc--rollable-dice,
+	.rd__roller--roll-prof-dice {
+		display: inline;
+	}
+}
+
+[data-proficiency-dice-mode="bonus"] {
+	.rd__dc--rollable-text,
+	.rd__roller--roll-prof-bonus {
+		display: inline;
+	}
+
+	.rd__dc--rollable-dice,
+	.rd__roller--roll-prof-dice {
+		display: none;
+	}
+}
+
+.night-mode [data-proficiency-dice-mode="dice"] .rd__dc--rollable {
+	color: vars.$rgb-link-blue--night;
+}
+// endregion
+
+// region Encounter builder
+.best__ {
+	&ecgen-active {
+		.lst__row--bestiary-sublist {
+			cursor: default;
+		}
+
+		.lst__row--bestiary-sublist:hover {
+			background: initial;
+		}
+	}
+}
+
+.best-ecgen {
+	&__ {
+		&visible,
+		&visible--flex,
+		&visible--flex-col {
+			display: none;
+		}
+
+		&btn-list {
+			padding: 0 2px;
+			line-height: 12px;
+			font-size: 9px;
+			border-radius: 3px;
+		}
+	}
+}
+
+.best__ecgen-active {
+	.best-ecgen {
+		&__visible {
+			display: block;
+		}
+
+		&__visible--flex {
+			display: flex;
+		}
+
+		&__visible--flex-col {
+			display: flex;
+			flex-direction: column;
+		}
+
+		&__hidden {
+			display: none !important;
+		}
+
+		&__name {
+			width: 26.6667%;
+		}
+
+		&__name--sub {
+			width: 29.1667%;
+		}
+	}
+}
+// endregion
