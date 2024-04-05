@@ -3,7 +3,7 @@ name: Build and Deploy
 on:
     push:
         branches:
-            - 'frank-2023'
+            - 'main'
         
     workflow_dispatch:
 
