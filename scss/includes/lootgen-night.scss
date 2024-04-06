@@ -1,8 +1,0 @@
-@use "vars";
-
-.night-mode .lootg__ {
-	&wrp-output {
-		background-color: vars.$rgb-bg--night;
-		border-color: vars.$rgb-border-grey--night;
-	}
-}
