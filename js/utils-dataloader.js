@@ -847,6 +847,14 @@ class _DataTypeLoaderOptionalfeatureFluff extends _DataTypeLoaderSingleSource {
 	_filename = "fluff-optionalfeatures.json";
 }
 
+class _DataTypeLoaderRewardFluff extends _DataTypeLoaderSingleSource {
+	static PROPS = ["rewardFluff"];
+	static PAGE = UrlUtil.PG_REWARDS;
+	static IS_FLUFF = true;
+
+	_filename = "fluff-rewards.json";
+}
+
 class _DataTypeLoaderItemFluff extends _DataTypeLoaderSingleSource {
 	static PROPS = ["itemFluff"];
 	static PAGE = UrlUtil.PG_ITEMS;
@@ -1060,6 +1068,28 @@ class _DataTypeLoaderCustomSpellFluff extends _DataTypeLoaderMultiSource {
 	static IS_FLUFF = true;
 
 	_prop = "spellFluff";
+}
+
+class _DataTypeLoaderClassSubclassFluff extends _DataTypeLoaderMultiSource {
+	static PROPS = ["classFluff", "subclassFluff"];
+	static PAGE = UrlUtil.PG_CLASSES;
+	static IS_FLUFF = true;
+
+	_getSiteIdent ({pageClean, sourceClean}) {
+		// use `.toString()` in case `sourceClean` is a `Symbol`
+		return `${this.constructor.PROPS.join("__")}__${sourceClean.toString()}`;
+	}
+
+	async _pGetSiteData ({pageClean, sourceClean}) {
+		return this._pGetSiteDataAll();
+	}
+
+	async _pGetSiteDataAll () {
+		const jsons = await this.constructor.PROPS.pMap(prop => DataUtil[prop].loadJSON());
+		const out = {};
+		jsons.forEach(json => Object.assign(out, {...json}));
+		return out;
+	}
 }
 
 /** @abstract */
@@ -1670,6 +1700,7 @@ class DataLoader {
 		_DataTypeLoaderCustomMonsterFluff.register({fnRegister});
 		_DataTypeLoaderCustomSpell.register({fnRegister});
 		_DataTypeLoaderCustomSpellFluff.register({fnRegister});
+		_DataTypeLoaderClassSubclassFluff.register({fnRegister});
 		// endregion
 
 		// region Predefined
@@ -1720,6 +1751,7 @@ class DataLoader {
 		_DataTypeLoaderBackgroundFluff.register({fnRegister});
 		_DataTypeLoaderFeatFluff.register({fnRegister});
 		_DataTypeLoaderOptionalfeatureFluff.register({fnRegister});
+		_DataTypeLoaderRewardFluff.register({fnRegister});
 		_DataTypeLoaderItemFluff.register({fnRegister});
 		_DataTypeLoaderRaceFluff.register({fnRegister});
 		_DataTypeLoaderLanguageFluff.register({fnRegister});
@@ -1886,7 +1918,7 @@ class DataLoader {
 	 */
 	static async pCacheAndGet (page, source, hash, {isCopy = false, isRequired = false, isSilent = false, lockToken2} = {}) {
 		const fromCache = this.getFromCache(page, source, hash, {isCopy, _isReturnSentinel: true});
-		if (fromCache === _DataLoaderConst.ENTITY_NULL) return null;
+		if (fromCache === _DataLoaderConst.ENTITY_NULL) return this._getVerifiedRequiredEntity({pageClean: page, sourceClean: source, hashClean: hash, ent: null, isRequired});
 		if (fromCache) return fromCache;
 
 		const {page: pageClean, source: sourceClean, hash: hashClean} = _DataLoaderInternalUtil.getCleanPageSourceHash({page, source, hash});
