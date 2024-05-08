@@ -1,6 +1,11 @@
-@use "includes/vars";
+@use "vars/vars";
+@use "vars/vars-night";
 
 .mon__ {
+	&name--token .stats-source {
+		padding-right: 12rem;
+	}
+
 	&wrp-size-type-align--token,
 	&wrp-avoid-token {
 		max-width: calc(100% - 11rem);
@@ -106,6 +111,10 @@
 	}
 }
 
+.lst__is-exporting-image .mon__name--token .stats-source {
+	padding-right: 0;
+}
+
 // region Token
 img.token {
 	font-size: 1.6em;
@@ -126,9 +135,9 @@ img.token {
 		vars.$rgb-bg-orange;
 }
 
-.night-mode {
+.ve-night-mode {
 	#pagecontent {
-		background: vars.$rgb-bg--night !important;
+		background: vars-night.$rgb-bg--night !important;
 	}
 }
 // endregion
@@ -163,8 +172,8 @@ img.token {
 	}
 }
 
-.night-mode [data-proficiency-dice-mode="dice"] .rd__dc--rollable {
-	color: vars.$rgb-link-blue--night;
+.ve-night-mode [data-proficiency-dice-mode="dice"] .rd__dc--rollable {
+	color: vars-night.$rgb-link-blue--night;
 }
 // endregion
 
