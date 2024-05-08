@@ -2,7 +2,7 @@
 
 // in deployment, `IS_DEPLOYED = "<version number>";` should be set below.
 globalThis.IS_DEPLOYED="appin.local";
-globalThis.VERSION_NUMBER = /* 5ETOOLS_VERSION__OPEN */"1.204.0"/* 5ETOOLS_VERSION__CLOSE */;
+globalThis.VERSION_NUMBER = /* 5ETOOLS_VERSION__OPEN */"1.206.1"/* 5ETOOLS_VERSION__CLOSE */;
 globalThis.DEPLOYED_IMG_ROOT="https://5etools.local/5etools-img/";
 // for the roll20 script to set
 globalThis.IS_VTT = false;
@@ -55,6 +55,7 @@ globalThis.VeCt = {
 
 	URL_BREW: `https://github.com/TheGiddyLimit/homebrew`,
 	URL_ROOT_BREW: `https://raw.githubusercontent.com/TheGiddyLimit/homebrew/master/`, // N.b. must end with a slash
+	URL_ROOT_BREW_IMG: `https://raw.githubusercontent.com/TheGiddyLimit/homebrew-img/main/`, // N.b. must end with a slash
 	URL_PRERELEASE: `https://github.com/TheGiddyLimit/unearthed-arcana`,
 	URL_ROOT_PRERELEASE: `https://raw.githubusercontent.com/TheGiddyLimit/unearthed-arcana/master/`, // As above
 
@@ -506,7 +507,7 @@ globalThis.SourceUtil = class {
 
 	static isLegacySourceWotc (source) {
 		if (source == null) return false;
-		return source === Parser.SRC_VGM || source === Parser.SRC_MTF;
+		return Parser.SOURCES_LEGACY_WOTC.has(source);
 	}
 
 	// TODO(Future) remove this in favor of simply checking existence in `PrereleaseUtil`
@@ -1331,14 +1332,39 @@ globalThis.MiscUtil = class {
 			$iptTemp.remove();
 		}
 
-		if (navigator && navigator.permissions) {
-			try {
-				const access = await navigator.permissions.query({name: "clipboard-write"});
-				if (access.state === "granted" || access.state === "prompt") {
-					await navigator.clipboard.writeText(text);
-				} else doCompatibilityCopy();
-			} catch (e) { doCompatibilityCopy(); }
-		} else doCompatibilityCopy();
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch (e) {
+			doCompatibilityCopy();
+		}
+	}
+
+	static async pCopyBlobToClipboard (blob) {
+		// https://developer.mozilla.org/en-US/docs/Web/API/ClipboardItem#browser_compatibility
+		// TODO(Future) remove when Firefox moves feature from Nightly -> Main
+		if (typeof ClipboardItem === "undefined") {
+			JqueryUtil.doToast({
+				type: "danger",
+				content: `Could not access clipboard! If you are on Firefox, visit <code>about:config</code> and enable </code><code>dom.events.asyncClipboard.clipboardItem</code>.`,
+				isAutoHide: false,
+			});
+			return;
+		}
+
+		try {
+			await navigator.clipboard.write([
+				new ClipboardItem({[blob.type]: blob}),
+			]);
+			return true;
+		} catch (e) {
+			if (e.message.includes("Document is not focused")) {
+				JqueryUtil.doToast({type: "danger", content: `Please focus the window first!`});
+				return false;
+			}
+
+			JqueryUtil.doToast({type: "danger", content: `Failed to copy! ${VeCt.STR_SEE_CONSOLE}`});
+			throw e;
+		}
 	}
 
 	static checkProperty (object, ...path) {
@@ -1350,7 +1376,7 @@ globalThis.MiscUtil = class {
 	}
 
 	static get (object, ...path) {
-		if (object == null) return null;
+		if (object == null) return object;
 		for (let i = 0; i < path.length; ++i) {
 			object = object[path[i]];
 			if (object == null) return object;
@@ -1359,7 +1385,7 @@ globalThis.MiscUtil = class {
 	}
 
 	static set (object, ...pathAndVal) {
-		if (object == null) return null;
+		if (object == null) return object;
 
 		const val = pathAndVal.pop();
 		if (!pathAndVal.length) return null;
@@ -2066,6 +2092,16 @@ globalThis.MiscUtil = class {
 		if (a != null && b == null) return false;
 		return a === b;
 	}
+
+	static getDatUrl (blob) {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(reader.result);
+			reader.onerror = () => reject(reader.error);
+			reader.onabort = () => reject(new Error("Read aborted"));
+			reader.readAsDataURL(blob);
+		});
+	}
 };
 
 // EVENT HANDLERS ======================================================================================================
@@ -2427,6 +2463,9 @@ globalThis.ContextUtil = {
 					const result = await this.fnAction(evt, {userData: menu.userData});
 					if (menu.resolveResult_) menu.resolveResult_(result);
 				})
+				.on("mousedown", evt => {
+					evt.preventDefault();
+				})
 				.keydown(evt => {
 					if (evt.key !== "Enter") return;
 					$btnAction.click();
@@ -2450,6 +2489,9 @@ globalThis.ContextUtil = {
 
 					const result = await this.fnActionAlt(evt, {userData: menu.userData});
 					if (menu.resolveResult_) menu.resolveResult_(result);
+				})
+				.on("mousedown", evt => {
+					evt.preventDefault();
 				});
 			if (this.titleAlt) $btnActionAlt.title(this.titleAlt);
 
@@ -2584,6 +2626,9 @@ globalThis.ContextUtil = {
 					);
 
 					menu.close();
+				})
+				.on("mousedown", evt => {
+					evt.preventDefault();
 				});
 
 			return {
@@ -2975,6 +3020,7 @@ UrlUtil.URL_TO_HASH_BUILDER["skill"] = UrlUtil.URL_TO_HASH_GENERIC;
 UrlUtil.URL_TO_HASH_BUILDER["sense"] = UrlUtil.URL_TO_HASH_GENERIC;
 UrlUtil.URL_TO_HASH_BUILDER["raceFeature"] = (it) => UrlUtil.encodeArrayForHash(it.name, it.raceName, it.raceSource, it.source);
 UrlUtil.URL_TO_HASH_BUILDER["citation"] = UrlUtil.URL_TO_HASH_GENERIC;
+UrlUtil.URL_TO_HASH_BUILDER["languageScript"] = UrlUtil.URL_TO_HASH_GENERIC;
 
 // Add lowercase aliases
 Object.keys(UrlUtil.URL_TO_HASH_BUILDER)
@@ -3412,6 +3458,26 @@ globalThis.SortUtil = {
 	},
 };
 
+globalThis.MultiSourceUtil = class {
+	static getIndexKey (prop, ent) {
+		switch (prop) {
+			case "class":
+			case "classFluff":
+				return (ent.name || "").toLowerCase().split(" ").at(-1);
+			case "subclass":
+			case "subclassFluff":
+				return (ent.className || "").toLowerCase().split(" ").at(-1);
+			default:
+				return ent.source;
+		}
+	}
+
+	static isEntityIndexKeyMatch (indexKey, prop, ent) {
+		if (indexKey == null) return true;
+		return indexKey === MultiSourceUtil.getIndexKey(prop, ent);
+	}
+};
+
 // JSON LOADING ========================================================================================================
 class _DataUtilPropConfig {
 	static _MERGE_REQUIRES_PRESERVE = {};
@@ -3450,7 +3516,7 @@ class _DataUtilPropConfigMultiSource extends _DataUtilPropConfig {
 
 	static async pLoadAll () {
 		const json = await this.loadJSON();
-		return json[this._PROP];
+		return json[this._PROP] || [];
 	}
 
 	static async loadJSON () { return this._loadJSON({isUnmerged: false}); }
@@ -3460,7 +3526,7 @@ class _DataUtilPropConfigMultiSource extends _DataUtilPropConfig {
 		const index = await this.pLoadIndex();
 
 		const allData = await Object.entries(index)
-			.pMap(async ([source, file]) => this._pLoadSourceEntities({source, isUnmerged, file}));
+			.pMap(async ([indexKey, file]) => this._pLoadSourceEntities({indexKey, isUnmerged, file}));
 
 		return {[this._PROP]: allData.flat()};
 	}
@@ -3471,16 +3537,16 @@ class _DataUtilPropConfigMultiSource extends _DataUtilPropConfig {
 		const file = index[source];
 		if (!file) return null;
 
-		return {[this._PROP]: await this._pLoadSourceEntities({source, file})};
+		return {[this._PROP]: await this._pLoadSourceEntities({indexKey: source, file})};
 	}
 
-	static async _pLoadSourceEntities ({source, isUnmerged = false, file}) {
+	static async _pLoadSourceEntities ({indexKey = null, isUnmerged = false, file}) {
 		await this._pInitPreData();
 
 		const fnLoad = isUnmerged ? DataUtil.loadRawJSON.bind(DataUtil) : DataUtil.loadJSON.bind(DataUtil);
 
 		let data = await fnLoad(`${Renderer.get().baseUrl}data/${this._DIR}/${file}`);
-		data = data[this._PROP].filter(it => it.source === source);
+		data = (data[this._PROP] || []).filter(MultiSourceUtil.isEntityIndexKeyMatch.bind(this, indexKey, this._PROP));
 
 		if (!this._IS_MUT_ENTITIES) return data;
 
@@ -3781,77 +3847,17 @@ globalThis.DataUtil = {
 	},
 
 	_userDownload (filename, data, mimeType) {
-		const a = document.createElement("a");
 		const t = new Blob([data], {type: mimeType});
-		a.href = window.URL.createObjectURL(t);
-		a.download = filename;
-		a.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, view: window}));
-		setTimeout(() => window.URL.revokeObjectURL(a.href), 100);
+		const dataUrl = window.URL.createObjectURL(t);
+		DataUtil.userDownloadDataUrl(filename, dataUrl);
+		setTimeout(() => window.URL.revokeObjectURL(dataUrl), 100);
 	},
 
-	/** Always returns an array of files, even in "single" mode. */
-	pUserUpload (
-		{
-			isMultiple = false,
-			expectedFileTypes = null,
-			propVersion = "siteVersion",
-		} = {},
-	) {
-		return new Promise(resolve => {
-			const $iptAdd = $(`<input type="file" ${isMultiple ? "multiple" : ""} class="ve-hidden" accept=".json">`)
-				.on("change", (evt) => {
-					const input = evt.target;
-
-					const reader = new FileReader();
-					let readIndex = 0;
-					const out = [];
-					const errs = [];
-
-					reader.onload = async () => {
-						const name = input.files[readIndex - 1].name;
-						const text = reader.result;
-
-						try {
-							const json = JSON.parse(text);
-
-							const isSkipFile = expectedFileTypes != null
-								&& json.fileType
-								&& !expectedFileTypes.includes(json.fileType)
-								&& !(await InputUiUtil.pGetUserBoolean({
-									textYes: "Yes",
-									textNo: "Cancel",
-									title: "File Type Mismatch",
-									htmlDescription: `The file "${name}" has the type "${json.fileType}" when the expected file type was "${expectedFileTypes.join("/")}".<br>Are you sure you want to upload this file?`,
-								}));
-
-							if (!isSkipFile) {
-								delete json.fileType;
-								delete json[propVersion];
-
-								out.push({name, json});
-							}
-						} catch (e) {
-							errs.push({filename: name, message: e.message});
-						}
-
-						if (input.files[readIndex]) {
-							reader.readAsText(input.files[readIndex++]);
-							return;
-						}
-
-						resolve({
-							files: out,
-							errors: errs,
-							jsons: out.map(({json}) => json),
-						});
-					};
-
-					reader.readAsText(input.files[readIndex++]);
-				})
-				.appendTo(document.body);
-
-			$iptAdd.click();
-		});
+	userDownloadDataUrl (filename, dataUrl) {
+		const a = document.createElement("a");
+		a.href = dataUrl;
+		a.download = filename;
+		a.dispatchEvent(new MouseEvent("click", {bubbles: true, cancelable: true, view: window}));
 	},
 
 	doHandleFileLoadErrorsGeneric (errors) {
@@ -3899,7 +3905,9 @@ globalThis.DataUtil = {
 		"spell": "spells",
 		"spellFluff": "spells",
 		"class": "class",
+		"classFluff": "class",
 		"subclass": "class",
+		"subclassFluff": "class",
 		"classFeature": "class",
 		"subclassFeature": "class",
 	},
@@ -3927,7 +3935,9 @@ globalThis.DataUtil = {
 
 			// region Multi-source
 			case "class":
+			case "classFluff":
 			case "subclass":
+			case "subclassFluff":
 			case "classFeature":
 			case "subclassFeature": {
 				const baseUrlPart = `${Renderer.get().baseUrl}data/${DataUtil._MULTI_SOURCE_PROP_TO_DIR[prop]}`;
@@ -4116,6 +4126,8 @@ globalThis.DataUtil = {
 		],
 
 		copyApplier: class {
+			static _WALKER = null;
+
 			// convert everything to arrays
 			static _normaliseMods (obj) {
 				Object.entries(obj._mod).forEach(([k, v]) => {
@@ -4505,12 +4517,32 @@ globalThis.DataUtil = {
 
 			static _doMod_scalarAddHit ({copyTo, copyFrom, modInfo, msgPtFailed, prop}) {
 				if (!copyTo[prop]) return;
-				copyTo[prop] = JSON.parse(JSON.stringify(copyTo[prop]).replace(/{@hit ([-+]?\d+)}/g, (m0, m1) => `{@hit ${Number(m1) + modInfo.scalar}}`));
+
+				const re = /{@hit ([-+]?\d+)}/g;
+				copyTo[prop] = this._WALKER.walk(
+					copyTo[prop],
+					{
+						string: (str) => {
+							return str
+								.replace(re, (m0, m1) => `{@hit ${Number(m1) + modInfo.scalar}}`);
+						},
+					},
+				);
 			}
 
 			static _doMod_scalarAddDc ({copyTo, copyFrom, modInfo, msgPtFailed, prop}) {
 				if (!copyTo[prop]) return;
-				copyTo[prop] = JSON.parse(JSON.stringify(copyTo[prop]).replace(/{@dc (\d+)(?:\|[^}]+)?}/g, (m0, m1) => `{@dc ${Number(m1) + modInfo.scalar}}`));
+
+				const re = /{@dc (\d+)(?:\|[^}]+)?}/g;
+				copyTo[prop] = this._WALKER.walk(
+					copyTo[prop],
+					{
+						string: (str) => {
+							return str
+								.replace(re, (m0, m1) => `{@dc ${Number(m1) + modInfo.scalar}}`);
+						},
+					},
+				);
 			}
 
 			static _doMod_maxSize ({copyTo, copyFrom, modInfo, msgPtFailed}) {
@@ -4609,6 +4641,8 @@ globalThis.DataUtil = {
 			}
 
 			static getCopy (impl, copyFrom, copyTo, templateData, {isExternalApplicationKeepCopy = false, isExternalApplicationIdentityOnly = false} = {}) {
+				this._WALKER ||= MiscUtil.getWalker();
+
 				if (isExternalApplicationKeepCopy) copyTo.__copy = MiscUtil.copyFast(copyFrom);
 
 				const msgPtFailed = `Failed to apply _copy to "${copyTo.name}" ("${copyTo.source}").`;
@@ -5449,13 +5483,13 @@ globalThis.DataUtil = {
 
 			// region Populate fonts, based on script
 			const scriptLookup = {};
-			(rawData.languageScript || []).forEach(script => scriptLookup[script.name] = script);
+			(rawData.languageScript || []).forEach(script => MiscUtil.set(scriptLookup, script.source, script.name, script));
 
 			const out = {language: MiscUtil.copyFast(rawData.language)};
 			out.language.forEach(lang => {
 				if (!lang.script || lang.fonts === false) return;
 
-				const script = scriptLookup[lang.script];
+				const script = MiscUtil.get(scriptLookup, lang.source, lang.script);
 				if (!script) return;
 
 				lang._fonts = [...script.fonts];
@@ -5621,7 +5655,6 @@ globalThis.DataUtil = {
 			for (const r of recipes) {
 				const fluff = await Renderer.utils.pGetFluff({
 					entity: r,
-					fnGetFluffData: DataUtil.recipeFluff.loadJSON.bind(DataUtil.recipeFluff),
 					fluffProp: "recipeFluff",
 				});
 
@@ -5837,8 +5870,25 @@ globalThis.DataUtil = {
 		// endregion
 	},
 
-	subclass: class extends _DataUtilPropConfig {
+	classFluff: class extends _DataUtilPropConfigMultiSource {
+		static _PAGE = UrlUtil.PG_CLASSES;
+		static _DIR = "class";
+		static _PROP = "classFluff";
+	},
+
+	subclass: class extends _DataUtilPropConfigCustom {
 		static _PAGE = "subclass";
+		static _PROP = "subclassFluff";
+
+		static async loadJSON () {
+			return DataUtil.class.loadJSON();
+		}
+	},
+
+	subclassFluff: class extends _DataUtilPropConfigMultiSource {
+		static _PAGE = "subclassFluff";
+		static _DIR = "class";
+		static _PROP = "subclassFluff";
 	},
 
 	deity: class extends _DataUtilPropConfigSingleSource {
@@ -7678,6 +7728,12 @@ globalThis.EditorUtil = {
 
 		return editor;
 	},
+};
+
+globalThis.BrowserUtil = class {
+	static isFirefox () {
+		return navigator.userAgent.includes("Firefox");
+	}
 };
 
 // MISC WEBPAGE ONLOADS ================================================================================================
