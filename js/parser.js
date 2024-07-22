@@ -643,8 +643,15 @@ Parser.sourceJsonToDate = function (source) {
 	if (typeof BrewUtil2 !== "undefined" && BrewUtil2.hasSourceJson(source)) return BrewUtil2.sourceJsonToDate(source);
 	return Parser._parse_aToB(Parser.SOURCE_JSON_TO_DATE, source, null);
 };
-
 Parser.sourceJsonToColor = function (source) {
+	source = Parser._getSourceStringFromSource(source);
+	if (Parser.hasSourceAbv(source)) return "";
+	if (typeof PrereleaseUtil !== "undefined" && PrereleaseUtil.hasSourceJson(source)) return PrereleaseUtil.sourceJsonToColor(source);
+	if (typeof BrewUtil2 !== "undefined" && BrewUtil2.hasSourceJson(source)) return BrewUtil2.sourceJsonToColor(source);
+	return "";
+};
+
+Parser.sourceJsonToSourceClassname = function (source) {
 	const sourceCased = Parser.sourceJsonToJson(source);
 	return `source__${sourceCased}`;
 };
@@ -872,6 +879,7 @@ Parser.itemRechargeToFull = function (recharge) {
 
 Parser.ITEM_MISC_TAG_TO_FULL = {
 	"CF/W": "Creates Food/Water",
+	"CNS": "Consumable",
 	"TT": "Trinket Table",
 };
 Parser.itemMiscTagToFull = function (type) {
@@ -991,7 +999,7 @@ Parser._spSchoolAbvToStylePart_prereleaseBrew = function ({school, brewUtil}) {
 	const rawColor = brewUtil.getMetaLookup("spellSchools")?.[school]?.color;
 	if (!rawColor || !rawColor.trim()) return "";
 	const validColor = BrewUtilShared.getValidColor(rawColor);
-	if (validColor.length) return `color: #${validColor};`;
+	if (validColor.length) return MiscUtil.getColorStylePart(validColor);
 };
 
 Parser.getOrdinalForm = function (i) {
@@ -1112,6 +1120,10 @@ Parser.SP_RANGE_TYPE_TO_FULL = {
 Parser.spRangeTypeToFull = function (range) {
 	return Parser._parse_aToB(Parser.SP_RANGE_TYPE_TO_FULL, range);
 };
+
+Parser.UNT_LBS = "lbs";
+Parser.UNT_TONS_IMPERIAL = "tns";
+Parser.UNT_TONS_METRIC = "Mg";
 
 Parser.UNT_FEET = "feet";
 Parser.UNT_YARDS = "yards";
@@ -1679,6 +1691,8 @@ Parser.monSpellcastingTagToFull = function (tag) {
 
 Parser.MON_MISC_TAG_TO_FULL = {
 	"AOE": "Has Areas of Effect",
+	"CUR": "Inflicts Curse",
+	"DIS": "Inflicts Disease",
 	"HPR": "Has HP Reduction",
 	"MW": "Has Weapon Attacks, Melee",
 	"RW": "Has Weapon Attacks, Ranged",
@@ -3606,6 +3620,7 @@ Parser.PROP_TO_TAG = {
 	"baseitem": "item",
 	"itemGroup": "item",
 	"magicvariant": "item",
+	"subclass": "class",
 };
 Parser.getPropTag = function (prop) {
 	if (Parser.PROP_TO_TAG[prop]) return Parser.PROP_TO_TAG[prop];
@@ -3732,7 +3747,7 @@ Parser.metric = {
 			case "ft.": case "ft": case Parser.UNT_FEET: out = originalValue * Parser.metric.FEET_TO_METRES; break;
 			case "yd.": case "yd": case Parser.UNT_YARDS: out = originalValue * Parser.metric.YARDS_TO_METRES; break;
 			case "mi.": case "mi": case Parser.UNT_MILES: out = originalValue * Parser.metric.MILES_TO_KILOMETRES; break;
-			case "lb.": case "lb": case "lbs": out = originalValue * Parser.metric.POUNDS_TO_KILOGRAMS; break;
+			case "lb.": case "lb": case Parser.UNT_LBS: out = originalValue * Parser.metric.POUNDS_TO_KILOGRAMS; break;
 			default: return originalValue;
 		}
 		if (toFixed != null) return NumberUtil.toFixedNumber(out, toFixed);
@@ -3744,7 +3759,7 @@ Parser.metric = {
 			case "ft.": case "ft": case Parser.UNT_FEET: return isShortForm ? "m" : `meter`[isPlural ? "toPlural" : "toString"]();
 			case "yd.": case "yd": case Parser.UNT_YARDS: return isShortForm ? "m" : `meter`[isPlural ? "toPlural" : "toString"]();
 			case "mi.": case "mi": case Parser.UNT_MILES: return isShortForm ? "km" : `kilometre`[isPlural ? "toPlural" : "toString"]();
-			case "lb.": case "lb": case "lbs": return isShortForm ? "kg" : `kilogram`[isPlural ? "toPlural" : "toString"]();
+			case "lb.": case "lb": case Parser.UNT_LBS: return isShortForm ? "kg" : `kilogram`[isPlural ? "toPlural" : "toString"]();
 			default: return originalUnit;
 		}
 	},

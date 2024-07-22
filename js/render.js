@@ -243,6 +243,50 @@ globalThis.Renderer = function () {
 		});
 	};
 
+	/**
+	 * Specify an array where the renderer will record rendered header depths.
+	 * Items added to the array are of the form: `{name: "Header Name", depth: 1, type: "entries", source: "PHB"}`
+	 * @param arr
+	 * @param additionalProps Additional data props which should be tracked per-entry.
+	 * @param additionalPropsInherited As per additionalProps, but if a parent entry has the prop, it should be passed
+	 * to its children.
+	 */
+	this.setDepthTracker = function (arr, {additionalProps, additionalPropsInherited} = {}) {
+		this._depthTracker = arr;
+		this._depthTrackerAdditionalProps = additionalProps || [];
+		this._depthTrackerAdditionalPropsInherited = additionalPropsInherited || [];
+		return this;
+	};
+
+	this.withDepthTracker = function (arr, fn, {additionalProps, additionalPropsInherited} = {}) {
+		const depthTrackerPrev = this._depthTracker;
+		const depthTrackerAdditionalPropsPrev = this._depthTrackerAdditionalProps;
+		const depthTrackerAdditionalPropsInheritedPrev = this._depthTrackerAdditionalPropsInherited;
+
+		let out;
+		try {
+			this.setDepthTracker(
+				arr,
+				{
+					additionalProps,
+					additionalPropsInherited,
+				},
+			);
+			out = fn({renderer: this});
+		} finally {
+			this.setDepthTracker(
+				depthTrackerPrev,
+				{
+					additionalProps: depthTrackerAdditionalPropsPrev,
+					additionalPropsInherited: depthTrackerAdditionalPropsInheritedPrev,
+				},
+			);
+		}
+		return out;
+	};
+
+	/* -------------------------------------------- */
+
 	// region Plugins
 	this.addPlugin = function (pluginType, fnPlugin) {
 		MiscUtil.getOrSet(this._plugins, pluginType, []).push(fnPlugin);
@@ -308,21 +352,6 @@ globalThis.Renderer = function () {
 		}
 	};
 	// endregion
-
-	/**
-	 * Specify an array where the renderer will record rendered header depths.
-	 * Items added to the array are of the form: `{name: "Header Name", depth: 1, type: "entries", source: "PHB"}`
-	 * @param arr
-	 * @param additionalProps Additional data props which should be tracked per-entry.
-	 * @param additionalPropsInherited As per additionalProps, but if a parent entry has the prop, it should be passed
-	 * to its children.
-	 */
-	this.setDepthTracker = function (arr, {additionalProps, additionalPropsInherited} = {}) {
-		this._depthTracker = arr;
-		this._depthTrackerAdditionalProps = additionalProps || [];
-		this._depthTrackerAdditionalPropsInherited = additionalPropsInherited || [];
-		return this;
-	};
 
 	this.getLineBreak = function () { return "<br>"; };
 
@@ -581,6 +610,11 @@ globalThis.Renderer = function () {
 			page: entry.page,
 			source: entry.source,
 			hash: entry.hash,
+			...entry.expectsLightBackground
+				? {expectsLightBackground: true}
+				: entry.expectsDarkBackground
+					? {expectsDarkBackground: true}
+					: {},
 		};
 	};
 
@@ -591,6 +625,8 @@ globalThis.Renderer = function () {
 
 	this._renderImage_getWrapperClasses = function (entry) {
 		const out = ["rd__wrp-image", "relative"];
+		if (entry.expectsLightBackground) out.push("rd__wrp-image--bg", "rd__wrp-image--bg-light");
+		else if (entry.expectsDarkBackground) out.push("rd__wrp-image--bg", "rd__wrp-image--bg-dark");
 		if (entry.style) {
 			switch (entry.style) {
 				case "comic-speaker-left": out.push("rd__comic-img-speaker", "rd__comic-img-speaker--left"); break;
@@ -1424,19 +1460,26 @@ globalThis.Renderer = function () {
 	};
 
 	this._renderStatblock = function (entry, textStack, meta, options) {
-		this._renderPrefix(entry, textStack, meta, options);
-
 		const page = entry.prop || Renderer.tag.getPage(entry.tag);
 		const source = Parser.getTagSource(entry.tag, entry.source);
 		const hash = entry.hash || (UrlUtil.URL_TO_HASH_BUILDER[page] ? UrlUtil.URL_TO_HASH_BUILDER[page]({...entry, name: entry.name, source}) : null);
+		const tag = entry.tag || Parser.getPropTag(entry.prop);
 
-		const asTag = `{@${entry.tag} ${entry.name}|${source}${entry.displayName ? `|${entry.displayName}` : ""}}`;
+		const asTag = `{@${tag} ${entry.name}|${source}${entry.displayName ? `|${entry.displayName}` : ""}}`;
+
+		const fromPlugins = this._applyPlugins_useFirst(
+			"statblock_render",
+			{textStack, meta, options},
+			{input: {entry, page, source, hash, tag, asTag}},
+		);
+		if (fromPlugins) return void (textStack[0] += fromPlugins);
 
 		if (!page || !source || !hash) {
+			this._renderPrefix(entry, textStack, meta, options);
 			this._renderDataHeader(textStack, entry.name, entry.style);
 			textStack[0] += `<tr>
 				<td colspan="6">
-					<i class="text-danger">Cannot load ${entry.tag ? `&quot;${asTag}&quot;` : entry.displayName || entry.name}! An unknown tag/prop, source, or hash was provided.</i>
+					<i class="text-danger">Cannot load ${tag ? `&quot;${asTag}&quot;` : entry.displayName || entry.name}! An unknown tag/prop, source, or hash was provided.</i>
 				</td>
 			</tr>`;
 			this._renderDataFooter(textStack);
@@ -1445,10 +1488,11 @@ globalThis.Renderer = function () {
 			return;
 		}
 
+		this._renderPrefix(entry, textStack, meta, options);
 		this._renderDataHeader(textStack, entry.displayName || entry.name, entry.style, {isCollapsed: entry.collapsed});
 		textStack[0] += `<tr>
-			<td colspan="6" data-rd-tag="${(entry.tag || "").qq()}" data-rd-page="${(page || "").qq()}" data-rd-source="${(source || "").qq()}" data-rd-hash="${(hash || "").qq()}" data-rd-name="${(entry.name || "").qq()}" data-rd-display-name="${(entry.displayName || "").qq()}" data-rd-style="${(entry.style || "").qq()}">
-				<i>Loading ${entry.tag ? `${Renderer.get().render(asTag)}` : entry.displayName || entry.name}...</i>
+			<td colspan="6" data-rd-tag="${(tag || "").qq()}" data-rd-page="${(page || "").qq()}" data-rd-source="${(source || "").qq()}" data-rd-hash="${(hash || "").qq()}" data-rd-name="${(entry.name || "").qq()}" data-rd-display-name="${(entry.displayName || "").qq()}" data-rd-style="${(entry.style || "").qq()}">
+				<i>Loading ${tag ? `${Renderer.get().render(asTag)}` : entry.displayName || entry.name}...</i>
 				<style onload="Renderer.events.handleLoad_inlineStatblock(this)"></style>
 			</td>
 		</tr>`;
@@ -2854,7 +2898,7 @@ Renderer.utils = class {
 						${!IS_VTT && ExtensionUtil.ACTIVE && opts.page ? Renderer.utils.getBtnSendToFoundryHtml() : ""}
 					</div>
 					<div class="stats-source ve-flex-v-baseline">
-						${tagPartSourceStart} class="help-subtle stats-source-abbreviation ${it.source ? `${Parser.sourceJsonToColor(it.source)}" title="${Parser.sourceJsonToFull(it.source)}${Renderer.utils.getSourceSubText(it)}` : ""}" ${Parser.sourceJsonToStyle(it.source)}>${it.source ? Parser.sourceJsonToAbv(it.source) : ""}${tagPartSourceEnd}
+						${tagPartSourceStart} class="help-subtle stats-source-abbreviation ${it.source ? `${Parser.sourceJsonToSourceClassname(it.source)}" title="${Parser.sourceJsonToFull(it.source)}${Renderer.utils.getSourceSubText(it)}` : ""}" ${Parser.sourceJsonToStyle(it.source)}>${it.source ? Parser.sourceJsonToAbv(it.source) : ""}${tagPartSourceEnd}
 
 						${Renderer.utils.isDisplayPage(it.page) ? ` ${tagPartSourceStart} class="rd__stats-name-page ml-1" title="Page ${it.page}">p${it.page}${tagPartSourceEnd}` : ""}
 
@@ -2972,9 +3016,16 @@ Renderer.utils = class {
 		return Renderer.get().render(Renderer.utils.getAbilityRollerEntry(statblock, ability));
 	}
 
-	static getEmbeddedDataHeader (name, style, {isCollapsed = false} = {}) {
+	static getEmbeddedDataHeader (name, style, {isCollapsed = false, isStatic = false} = {}) {
 		return `<table class="rd__b-special rd__b-data ${style ? `rd__b-data--${style}` : ""}">
-		<thead><tr><th class="rd__data-embed-header" colspan="6" data-rd-data-embed-header="true"><span class="rd__data-embed-name ${isCollapsed ? "" : `ve-hidden`}">${name}</span><span class="rd__data-embed-toggle">[${isCollapsed ? "+" : "\u2013"}]</span></th></tr></thead><tbody class="${isCollapsed ? `ve-hidden` : ""}" data-rd-embedded-data-render-target="true">`;
+		<thead>
+			<tr>
+				<th class="rd__data-embed-header" colspan="6" data-rd-data-embed-header="true">
+					<span class="rd__data-embed-name ${!isStatic && isCollapsed ? "" : `ve-hidden`}">${name}</span>
+					${isStatic ? `<span></span>` : `<span class="rd__data-embed-toggle">[${isCollapsed ? "+" : "\u2013"}]</span>`}
+				</th>
+			</tr>
+		</thead><tbody class="${!isStatic && isCollapsed ? `ve-hidden` : ""}" data-rd-embedded-data-render-target="true">`;
 	}
 
 	static getEmbeddedDataFooter () {
@@ -3136,21 +3187,29 @@ Renderer.utils = class {
 		return fluff;
 	}
 
-	static async _pGetFluff ({entity, fluffProp} = {}) {
-		const fluffEntity = await DataLoader.pCacheAndGet(fluffProp, entity.source, UrlUtil.URL_TO_HASH_BUILDER[fluffProp](entity));
+	static async _pGetFluff ({entity, fluffProp, lockToken2} = {}) {
+		const fluffEntity = await DataLoader.pCacheAndGet(fluffProp, entity.source, UrlUtil.URL_TO_HASH_BUILDER[fluffProp](entity), {lockToken2});
 		if (fluffEntity) return fluffEntity;
 
 		if (entity._versionBase_name && entity._versionBase_source) {
-			return DataLoader.pCacheAndGet(fluffProp, entity.source, UrlUtil.URL_TO_HASH_BUILDER[fluffProp]({
-				name: entity._versionBase_name,
-				source: entity._versionBase_source,
-			}));
+			return DataLoader.pCacheAndGet(
+				fluffProp,
+				entity.source,
+				UrlUtil.URL_TO_HASH_BUILDER[fluffProp]({
+					name: entity._versionBase_name,
+					source: entity._versionBase_source,
+				}),
+				{
+					lockToken2,
+				},
+			);
 		}
 
 		return null;
 	}
 
-	static async pGetFluff ({entity, pFnPostProcess, fluffProp} = {}) {
+	// TODO(Future) move into `DataLoader`; cleanup `lockToken2` usage
+	static async pGetFluff ({entity, pFnPostProcess, fluffProp, lockToken2 = null} = {}) {
 		const predefinedFluff = await Renderer.utils.pGetPredefinedFluff(entity, fluffProp);
 		if (predefinedFluff) {
 			if (pFnPostProcess) return pFnPostProcess(predefinedFluff);
@@ -6423,16 +6482,16 @@ Renderer.race = class {
 		opts = opts || {};
 
 		const out = [];
-		races.forEach(r => {
+		races.forEach(race => {
 			// FIXME(Deprecated) Backwards compatibility for old race data; remove at some point
-			if (r.size && typeof r.size === "string") r.size = [r.size];
+			if (race.size && typeof race.size === "string") race.size = [race.size];
 
 			// Ignore `"lineage": true`, as it is only used for filters
-			if (r.lineage && r.lineage !== true) {
-				r = MiscUtil.copyFast(r);
+			if (race.lineage && race.lineage !== true) {
+				race = MiscUtil.copyFast(race);
 
-				if (r.lineage === "VRGR") {
-					r.ability = r.ability || [
+				if (race.lineage === "VRGR") {
+					race.ability = race.ability || [
 						{
 							choose: {
 								weighted: {
@@ -6450,8 +6509,8 @@ Renderer.race = class {
 							},
 						},
 					];
-				} else if (r.lineage === "UA1") {
-					r.ability = r.ability || [
+				} else if (race.lineage === "UA1") {
+					race.ability = race.ability || [
 						{
 							choose: {
 								weighted: {
@@ -6463,60 +6522,60 @@ Renderer.race = class {
 					];
 				}
 
-				r.entries = r.entries || [];
-				r.entries.push({
+				race.entries = race.entries || [];
+				race.entries.push({
 					type: "entries",
 					name: "Languages",
 					entries: ["You can speak, read, and write Common and one other language that you and your DM agree is appropriate for your character."],
 				});
 
-				r.languageProficiencies = r.languageProficiencies || [{"common": true, "anyStandard": 1}];
+				race.languageProficiencies = race.languageProficiencies || [{"common": true, "anyStandard": 1}];
 			}
 
-			if (r.subraces && !r.subraces.length) delete r.subraces;
+			if (race.subraces && !race.subraces.length) delete race.subraces;
 
-			if (r.subraces) {
-				r.subraces.forEach(sr => {
-					sr.source = sr.source || r.source;
+			if (race.subraces) {
+				race.subraces.forEach(sr => {
+					sr.source = sr.source || race.source;
 					sr._isSubRace = true;
 				});
 
-				r.subraces.sort((a, b) => SortUtil.ascSortLower(a.name || "_", b.name || "_") || SortUtil.ascSortLower(Parser.sourceJsonToAbv(a.source), Parser.sourceJsonToAbv(b.source)));
+				race.subraces.sort((a, b) => SortUtil.ascSortLower(a.name || "_", b.name || "_") || SortUtil.ascSortLower(Parser.sourceJsonToAbv(a.source), Parser.sourceJsonToAbv(b.source)));
 			}
 
-			if (opts.isAddBaseRaces && r.subraces) {
-				const baseRace = MiscUtil.copyFast(r);
+			if (opts.isAddBaseRaces && race.subraces) {
+				const baseRace = MiscUtil.copyFast(race);
 
 				baseRace._isBaseRace = true;
 
-				const isAnyNoName = r.subraces.some(it => !it.name);
+				const isAnyNoName = race.subraces.some(it => !it.name);
 				if (isAnyNoName) {
 					baseRace._rawName = baseRace.name;
 					baseRace.name = `${baseRace.name} (Base)`;
 				}
 
 				const nameCounts = {};
-				r.subraces.filter(sr => sr.name).forEach(sr => nameCounts[sr.name.toLowerCase()] = (nameCounts[sr.name.toLowerCase()] || 0) + 1);
-				nameCounts._ = r.subraces.filter(sr => !sr.name).length;
+				race.subraces.filter(sr => sr.name).forEach(sr => nameCounts[sr.name.toLowerCase()] = (nameCounts[sr.name.toLowerCase()] || 0) + 1);
+				nameCounts._ = race.subraces.filter(sr => !sr.name).length;
 
 				const lst = {
 					type: "list",
-					items: r.subraces.map(sr => {
+					items: race.subraces.map(sr => {
 						const count = nameCounts[(sr.name || "_").toLowerCase()];
-						const idName = Renderer.race.getSubraceName(r.name, sr.name);
+						const idName = Renderer.race.getSubraceName(race.name, sr.name);
 						return `{@race ${idName}|${sr.source}${count > 1 ? `|${idName} (<span title="${Parser.sourceJsonToFull(sr.source).escapeQuotes()}">${Parser.sourceJsonToAbv(sr.source)}</span>)` : ""}}`;
 					}),
 				};
 
 				Renderer.race._mutBaseRaceEntries(baseRace, lst);
-				baseRace._subraces = r.subraces.map(sr => ({name: Renderer.race.getSubraceName(r.name, sr.name), source: sr.source}));
+				baseRace._subraces = race.subraces.map(sr => ({name: Renderer.race.getSubraceName(race.name, sr.name), source: sr.source}));
 
 				delete baseRace.subraces;
 
 				out.push(baseRace);
 			}
 
-			out.push(...Renderer.race._mergeSubraces(r));
+			out.push(...Renderer.race._mergeSubraces(race));
 		});
 
 		return out;
@@ -8947,6 +9006,10 @@ Renderer.item = class {
 
 		Renderer.item._createSpecificVariants_mergeVulnerableResistImmune({specificVariant, inherits});
 
+		// Inherit fluff
+		if (genericVariant.hasFluff) specificVariant.hasFluff = genericVariant.hasFluff;
+		if (genericVariant.hasFluffImages) specificVariant.hasFluffImages = genericVariant.hasFluffImages;
+
 		// track the specific variant on the parent generic, to later render as part of the stats
 		genericVariant.variants = genericVariant.variants || [];
 		if (!genericVariant.variants.some(it => it.base?.name === baseItem.name && it.base?.source === baseItem.source)) genericVariant.variants.push({base: baseItem, specificVariant});
@@ -9453,9 +9516,18 @@ Renderer.item = class {
 		return false;
 	}
 
-	static pGetFluff (item) {
-		return Renderer.utils.pGetFluff({
+	static async pGetFluff (item) {
+		const fluffItem = await Renderer.utils.pGetFluff({
 			entity: item,
+			fluffProp: "itemFluff",
+		});
+		if (fluffItem) return fluffItem;
+
+		if (!item._variantName) return null;
+
+		// Inherit generic variant fluff
+		return Renderer.utils.pGetFluff({
+			entity: {name: item._variantName, source: item.source},
 			fluffProp: "itemFluff",
 		});
 	}
@@ -10138,12 +10210,21 @@ Renderer.vehicle = class {
 		static getVehicleInfwarRenderableEntriesMeta (ent) {
 			const dexMod = Parser.getAbilityModNumber(ent.dex);
 
+			const ptDtMt = [
+				ent.hp.dt != null ? `damage threshold ${ent.hp.dt}` : null,
+				ent.hp.mt != null ? `ishap threshold ${ent.hp.mt}` : null,
+			]
+				.filter(Boolean)
+				.join(", ");
+
+			const ptAc = ent.ac ?? dexMod === 0 ? `19` : `${19 + dexMod} (19 while motionless)`;
+
 			return {
 				entrySizeWeight: `{@i ${Parser.sizeAbvToFull(ent.size)} vehicle (${ent.weight.toLocaleString()} lb.)}`,
 				entryCreatureCapacity: `{@b Creature Capacity} ${Renderer.vehicle.getInfwarCreatureCapacity(ent)}`,
 				entryCargoCapacity: `{@b Cargo Capacity} ${Parser.weightToFull(ent.capCargo)}`,
-				entryArmorClass: `{@b Armor Class} ${dexMod === 0 ? `19` : `${19 + dexMod} (19 while motionless)`}`,
-				entryHitPoints: `{@b Hit Points} ${ent.hp.hp} (damage threshold ${ent.hp.dt}, mishap threshold ${ent.hp.mt})`,
+				entryArmorClass: `{@b Armor Class} ${ptAc}`,
+				entryHitPoints: `{@b Hit Points} ${ent.hp.hp}${ptDtMt ? ` (${ptDtMt})` : ""}`,
 				entrySpeed: `{@b Speed} ${ent.speed} ft.`,
 				entrySpeedNote: `[{@b Travel Pace} ${Math.floor(ent.speed / 10)} miles per hour (${Math.floor(ent.speed * 24 / 10)} miles per day)]`,
 				entrySpeedNoteTitle: `Based on "Special Travel Pace," DMG p242`,
@@ -10457,7 +10538,7 @@ Renderer.recipe = class {
 				? `{@b {@style Makes|small-caps}} ${ent._scaleFactor ? `${ent._scaleFactor}× ` : ""}${ent.makes}`
 				: null,
 			entryServes: ent.serves
-				? `{@b {@style Serves|small-caps}} ${ent.serves.min ?? ent.serves.exact}${ent.serves.min != null ? " to " : ""}${ent.serves.max ?? ""}`
+				? `{@b {@style Serves|small-caps}} ${ent.serves.min ?? ent.serves.exact}${ent.serves.min != null ? " to " : ""}${ent.serves.max ?? ""}${ent.serves.note ? ` ${ent.serves.note}` : ""}`
 				: null,
 			entryMetasTime: Renderer.recipe._getEntryMetasTime(ent),
 			entryIngredients: {entries: ent._fullIngredients},
@@ -10643,6 +10724,7 @@ Renderer.recipe = class {
 		"tablespoon",
 		"teaspoon",
 		"wedge",
+		"fist",
 	];
 	static _UNITS_SINGLE_TO_PLURAL_ES = [
 		"dash",
@@ -10965,6 +11047,7 @@ Renderer.generic = class {
 			skillToolLanguageProfs,
 			setValid: new Set(this.FEATURE__SKILLS_ALL),
 			setValidAny: this._SKILL_TOOL_LANGUAGE_KEYS__SKILL_ANY,
+			anyAlt: "anySkill",
 			isShort,
 			hoverTag: "skill",
 		});
@@ -10976,6 +11059,7 @@ Renderer.generic = class {
 			skillToolLanguageProfs,
 			setValid: new Set(this.FEATURE__TOOLS_ALL),
 			setValidAny: this._SKILL_TOOL_LANGUAGE_KEYS__TOOL_ANY,
+			anyAlt: "anyTool",
 			isShort,
 		});
 	}
@@ -10986,11 +11070,12 @@ Renderer.generic = class {
 			skillToolLanguageProfs,
 			setValid: new Set(this.FEATURE__LANGUAGES_ALL),
 			setValidAny: this._SKILL_TOOL_LANGUAGE_KEYS__LANGAUGE_ANY,
+			anyAlt: "anyLanguage",
 			isShort,
 		});
 	}
 
-	static _summariseProfs ({profGroupArr, skillToolLanguageProfs, setValid, setValidAny, isShort, hoverTag}) {
+	static _summariseProfs ({profGroupArr, skillToolLanguageProfs, setValid, setValidAny, anyAlt, isShort, hoverTag}) {
 		if (!profGroupArr?.length && !skillToolLanguageProfs?.length) return {summary: "", collection: []};
 
 		const collectionSet = new Set();
@@ -11010,13 +11095,13 @@ Renderer.generic = class {
 						const chooseProfs = vMapped.from
 							.filter(s => !isValidate || setValid.has(s))
 							.map(s => {
-								collectionSet.add(s);
+								collectionSet.add(this._summariseProfs_getCollectionKey(s, anyAlt));
 								return this._summariseProfs_getEntry({str: s, isShort, hoverTag});
 							});
 						return `${isShort ? `${i === 0 ? "C" : "c"}hoose ` : ""}${v.count || 1} ${isShort ? `of` : `from`} ${chooseProfs.joinConjunct(", ", " or ")}`;
 					}
 
-					collectionSet.add(k);
+					collectionSet.add(this._summariseProfs_getCollectionKey(k, anyAlt));
 					return this._summariseProfs_getEntry({str: k, isShort, hoverTag});
 				});
 
@@ -11034,6 +11119,10 @@ Renderer.generic = class {
 			.join(` <i>or</i> `);
 
 		return {summary, collection: [...collectionSet].sort(SortUtil.ascSortLower)};
+	}
+
+	static _summariseProfs_getCollectionKey (k, anyAlt) {
+		return k === anyAlt ? "any" : k;
 	}
 
 	static _summariseProfs_sortKeys (a, b, {setValidAny = null} = {}) {
@@ -12065,9 +12154,9 @@ Renderer.hover = class {
 					</style>
 				</head><body class="rd__body-popout">
 				<div class="hwin hoverbox--popout hwin--popout"></div>
-				<script type="text/javascript" src="js/parser.js"></script>
-				<script type="text/javascript" src="js/utils.js"></script>
-				<script type="text/javascript" src="lib/jquery.js"></script>
+				<script type="text/javascript" defer src="js/parser.js"></script>
+				<script type="text/javascript" defer src="js/utils.js"></script>
+				<script type="text/javascript" defer src="lib/jquery.js"></script>
 				</body></html>
 			`);
 
