@@ -6,14 +6,18 @@ class Omnidexer {
 		 * Produces index of the form:
 		 * {
 		 *   n: "Display Name",
-		 *   b: "Base Name" // Optional; name is used if not specified
+		 *   [b: "Base Name"] // name is used if not specified
 		 *   s: "PHB", // source
+		 *   [sA: "PHB"], // source abbreviation
+		 *   [sF: "Player's Handbook"], // source full
+		 *   [sC: "ff00ff"], // source color
 		 *   u: "spell name_phb, // hash
 		 *   uh: "spell name_phb, // Optional; hash for href if the link should be different from the hover lookup hash.
 		 *   p: 110, // page number
 		 *   [q: "bestiary.html", // page; synthetic property only used by search widget]
 		 *   h: 1 // if isHover enabled, otherwise undefined
 		 *   r: 1 // if SRD
+		 *   [dP: 1] // if partnered
 		 *   c: 10, // category ID
 		 *   id: 123, // index ID
 		 *   [t: "spell"], // tag
@@ -46,13 +50,16 @@ class Omnidexer {
 			Object.entries(metadata[k]).forEach(([kk, vv]) => (lookup[k] = lookup[k] || {})[vv] = kk);
 		});
 
-		index.forEach(it => Object.keys(it).filter(k => props.has(k))
-			.forEach(k => it[k] = lookup[k][it[k]] ?? it[k]));
+		index.forEach(it => {
+			Object.keys(it).filter(k => props.has(k))
+				.forEach(k => it[k] = lookup[k][it[k]] ?? it[k]);
+		});
+
 		return index;
 	}
 
 	static getProperty (obj, withDots) {
-		return withDots.split(".").reduce((o, i) => o[i], obj);
+		return MiscUtil.get(obj, ...withDots.split("."));
 	}
 
 	/**
@@ -65,6 +72,7 @@ class Omnidexer {
 	 * @param [options.isIncludeTag]
 	 * @param [options.isIncludeUid]
 	 * @param [options.isIncludeImg]
+	 * @param [options.isIncludeExtendedSourceInfo]
 	 */
 	async pAddToIndex (arbiter, json, options) {
 		options = options || {};
@@ -110,7 +118,7 @@ class Omnidexer {
 		if ((options.isNoFilter || (!arbiter.include && !(arbiter.filter && arbiter.filter(ent))) || (!arbiter.filter && (!arbiter.include || arbiter.include(ent)))) && !arbiter.isOnlyDeep) index.push(toAdd);
 
 		const primary = {it: ent, ix: ix, parentName: name};
-		const deepItems = await arbiter.pGetDeepIndex(this, primary, ent);
+		const deepItems = await arbiter.pGetDeepIndex(this, primary, ent, {name});
 		for (const item of deepItems) {
 			const toAdd = await this._pAddToIndex_pGetToAdd(state, ent, item);
 			if (!arbiter.filter || !arbiter.filter(ent)) index.push(toAdd);
@@ -140,6 +148,8 @@ class Omnidexer {
 		if (ent.srd) indexDoc.r = 1;
 
 		if (src) {
+			if (SourceUtil.isPartneredSourceWotc(src)) indexDoc.dP = 1;
+
 			if (options.isIncludeTag) {
 				indexDoc.t = this.getMetaId("t", Parser.getPropTag(arbiter.listProp));
 			}
@@ -166,6 +176,15 @@ class Omnidexer {
 				if (indexDoc.m) {
 					indexDoc.m = indexDoc.m.replace(/^img\//, "");
 				}
+			}
+
+			if (options.isIncludeExtendedSourceInfo) {
+				indexDoc.sA = this.getMetaId("sA", Parser.sourceJsonToAbv(src));
+
+				indexDoc.sF = this.getMetaId("sF", Parser.sourceJsonToFull(src));
+
+				const color = Parser.sourceJsonToColor(src);
+				if (color) indexDoc.sC = this.getMetaId("sC", color);
 			}
 		}
 
@@ -303,11 +322,13 @@ class IndexableDirectorySubclass extends IndexableDirectory {
 		});
 	}
 
-	pGetDeepIndex (indexer, primary, sc) {
+	pGetDeepIndex (indexer, primary, sc, {name}) {
+		name ||= sc.name;
+
 		return [
 			{
-				b: sc.name,
-				n: `${sc.name} (${sc.className})`,
+				b: name,
+				n: `${name} (${sc.className})`,
 				s: indexer.getMetaId("s", sc.source),
 				u: `${UrlUtil.URL_TO_HASH_BUILDER[UrlUtil.PG_CLASSES]({name: sc.className, source: sc.classSource})}${HASH_PART_SEP}${UrlUtil.getClassesPageStatePart({subclass: sc})}`,
 				p: sc.page,
@@ -860,7 +881,6 @@ class IndexableFileAdventures extends IndexableFile {
 		super({
 			category: Parser.CAT_ID_ADVENTURE,
 			file: "adventures.json",
-			source: "id",
 			listProp: "adventure",
 			baseUrl: "adventure.html",
 		});
@@ -872,7 +892,6 @@ class IndexableFileBooks extends IndexableFile {
 		super({
 			category: Parser.CAT_ID_BOOK,
 			file: "books.json",
-			source: "id",
 			listProp: "book",
 			baseUrl: "book.html",
 		});
@@ -896,8 +915,7 @@ class IndexableFileQuickReference extends IndexableFile {
 
 	static getChapterNameMetas (it, {isRequireQuickrefFlag = true} = {}) {
 		const trackedNames = [];
-		const renderer = Renderer.get().setDepthTracker(trackedNames);
-		renderer.render(it);
+		Renderer.get().withDepthTracker(trackedNames, ({renderer}) => renderer.render(it));
 
 		const nameCounts = {};
 		trackedNames.forEach(meta => {

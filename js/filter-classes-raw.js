@@ -177,7 +177,7 @@ class PageFilterClassesRaw extends PageFilterClassesBase {
 		classFeature.level = level;
 		classFeature.source = source;
 
-		const entityRoot = await DataLoader.pCacheAndGet("raw_classFeature", classFeature.source, classFeature.hash, {isCopy: true});
+		const entityRoot = await DataLoader.pCacheAndGet("raw_classFeature", classFeature.source, classFeature.hash, {isCopy: true, isRequired: true});
 		const loadedRoot = {
 			type: "classFeature",
 			entity: entityRoot,
@@ -221,7 +221,7 @@ class PageFilterClassesRaw extends PageFilterClassesBase {
 		subclassFeature.level = level;
 		subclassFeature.source = source;
 
-		const entityRoot = await DataLoader.pCacheAndGet("raw_subclassFeature", subclassFeature.source, subclassFeature.hash, {isCopy: true});
+		const entityRoot = await DataLoader.pCacheAndGet("raw_subclassFeature", subclassFeature.source, subclassFeature.hash, {isCopy: true, isRequired: true});
 		const loadedRoot = {
 			type: "subclassFeature",
 			entity: entityRoot,
@@ -325,7 +325,7 @@ class PageFilterClassesRaw extends PageFilterClassesBase {
 		ent.name = name;
 		ent.source = source;
 
-		const entityRoot = raw != null ? MiscUtil.copyFast(raw) : await DataLoader.pCacheAndGet(`raw_${prop}`, ent.source, ent.hash, {isCopy: true});
+		const entityRoot = raw != null ? MiscUtil.copyFast(raw) : await DataLoader.pCacheAndGet(`raw_${prop}`, ent.source, ent.hash, {isCopy: true, isRequired: true});
 		const loadedRoot = {
 			type: prop,
 			entity: entityRoot,
@@ -616,7 +616,7 @@ class PageFilterClassesRaw extends PageFilterClassesBase {
 
 globalThis.PageFilterClassesRaw = PageFilterClassesRaw;
 
-class ModalFilterClasses extends ModalFilter {
+class ModalFilterClasses extends ModalFilterBase {
 	/**
 	 * @param opts
 	 * @param opts.namespace
@@ -830,7 +830,7 @@ class ModalFilterClasses extends ModalFilter {
 
 			pageFilter.trimState();
 
-			pageFilter.filterBox.on(FilterBox.EVNT_VALCHANGE, handleFilterChange);
+			pageFilter.filterBox.on(FILTER_BOX_EVNT_VALCHANGE, handleFilterChange);
 			pageFilter.filterBox.render();
 			handleFilterChange();
 
@@ -968,7 +968,7 @@ class ModalFilterClasses extends ModalFilter {
 
 		eleLabel.innerHTML = `<div class="ve-col-1 pl-0 ve-flex-vh-center"><div class="fltr-cls__tgl"></div></div>
 		<div class="bold ve-col-9 ${cls._versionBase_isVersion ? "italic" : ""}">${cls._versionBase_isVersion ? `<span class="px-3"></span>` : ""}${cls.name}</div>
-		<div class="ve-col-2 pr-0 ve-flex-h-center ${Parser.sourceJsonToColor(cls.source)}" title="${Parser.sourceJsonToFull(cls.source)}" ${Parser.sourceJsonToStyle(cls.source)}>${source}${Parser.sourceJsonToMarkerHtml(cls.source)}</div>`;
+		<div class="ve-col-2 pr-0 ve-flex-h-center ${Parser.sourceJsonToSourceClassname(cls.source)}" title="${Parser.sourceJsonToFull(cls.source)}" ${Parser.sourceJsonToStyle(cls.source)}>${source}${Parser.sourceJsonToMarkerHtml(cls.source)}</div>`;
 
 		return new ListItem(
 			clsI,
@@ -992,7 +992,7 @@ class ModalFilterClasses extends ModalFilter {
 
 		eleLabel.innerHTML = `<div class="ve-col-1 pl-0 ve-flex-vh-center"><div class="fltr-cls__tgl"></div></div>
 		<div class="ve-col-9 pl-1 ve-flex-v-center ${sc._versionBase_isVersion ? "italic" : ""}">${sc._versionBase_isVersion ? `<span class="px-3"></span>` : ""}<span class="mx-3">\u2014</span> ${sc.name}</div>
-		<div class="ve-col-2 pr-0 ve-flex-h-center ${Parser.sourceJsonToColor(sc.source)}" title="${Parser.sourceJsonToFull(sc.source)}" ${Parser.sourceJsonToStyle(sc.source)}>${source}${Parser.sourceJsonToMarkerHtml(sc.source)}</div>`;
+		<div class="ve-col-2 pr-0 ve-flex-h-center ${Parser.sourceJsonToSourceClassname(sc.source)}" title="${Parser.sourceJsonToFull(sc.source)}" ${Parser.sourceJsonToStyle(sc.source)}>${source}${Parser.sourceJsonToMarkerHtml(sc.source)}</div>`;
 
 		return new ListItem(
 			`${clsI}--${scI}`,

@@ -108,8 +108,9 @@ class ItemParser extends BaseParser {
 		ChargeTag.tryRun(stats);
 		RechargeTypeTag.tryRun(stats, {cbMan: () => options.cbWarning(`${manName}Recharge type requires manual conversion`)});
 		RechargeAmountTag.tryRun(stats, {cbMan: () => options.cbWarning(`${manName}Recharge amount requires manual conversion`)});
-		BonusTag.tryRun(stats);
 		ItemMiscTag.tryRun(stats);
+		BonusTag.tryRun(stats);
+		ItemOtherTagsTag.tryRun(stats);
 		ItemSpellcastingFocusTag.tryRun(stats);
 		DamageResistanceTag.tryRun(stats, {cbMan: () => options.cbWarning(`${manName}Damage resistance tagging requires manual conversion`)});
 		DamageImmunityTag.tryRun(stats, {cbMan: () => options.cbWarning(`${manName}Damage immunity tagging requires manual conversion`)});
@@ -225,9 +226,15 @@ class ItemParser extends BaseParser {
 			const isGenericWeaponArmor = this._setCleanTaglineInfo_mutIsGenericWeaponArmor({stats, part, partLower, options});
 			if (isGenericWeaponArmor) continue;
 
-			const mBaseWeapon = /^(?<ptPre>weapon|staff) \((?<ptParens>[^)]+)\)$/i.exec(part);
+			const mBaseWeapon = /^(?<ptPre>weapon|staff|rod) \((?<ptParens>[^)]+)\)$/i.exec(part);
 			if (mBaseWeapon) {
 				if (mBaseWeapon.groups.ptPre.toLowerCase() === "staff") stats.staff = true;
+				if (mBaseWeapon.groups.ptPre.toLowerCase() === "rod") {
+					if (stats.type) {
+						throw new Error(`Multiple types! "${stats.type}" -> "${mBaseWeapon.groups.ptParens}"`);
+					}
+					stats.type = "RD";
+				}
 
 				if (mBaseWeapon.groups.ptParens === "spear or javelin") {
 					(stats.requires ||= []).push(...this._setCleanTaglineInfo_getGenericRequires({stats, str: "spear", options}));

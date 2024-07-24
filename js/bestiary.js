@@ -211,13 +211,13 @@ class BestiaryPageBookView extends ListPageBookView {
 		const $btnDownloadMarkdown = $(`<button class="btn btn-default btn-sm">Download as Markdown</button>`)
 			.click(async () => DataUtil.userDownloadText("bestiary.md", await pGetAsMarkdown()));
 
-		const $btnCopyMarkdown = $(`<button class="btn btn-default btn-sm px-2" title="Copy Markdown to Clipboard"><span class="glyphicon glyphicon-copy"/></button>`)
+		const $btnCopyMarkdown = $(`<button class="btn btn-default btn-sm px-2" title="Copy Markdown to Clipboard"><span class="glyphicon glyphicon-copy"></span></button>`)
 			.click(async () => {
 				await MiscUtil.pCopyTextToClipboard(await pGetAsMarkdown());
 				JqueryUtil.showCopiedEffect($btnCopyMarkdown);
 			});
 
-		const $btnDownloadMarkdownSettings = $(`<button class="btn btn-default btn-sm px-2" title="Markdown Settings"><span class="glyphicon glyphicon-cog"/></button>`)
+		const $btnDownloadMarkdownSettings = $(`<button class="btn btn-default btn-sm px-2" title="Markdown Settings"><span class="glyphicon glyphicon-cog"></span></button>`)
 			.click(async () => RendererMarkdown.pShowSettingsModal());
 
 		$$`<div class="ve-flex-v-center btn-group ml-2">
@@ -306,8 +306,8 @@ class BestiaryPage extends ListPageMultiSource {
 					size: {name: "Size", transform: size => Renderer.utils.getRenderedSize(size)},
 					type: {name: "Type", transform: type => Parser.monTypeToFullObj(type).asText},
 					alignment: {name: "Alignment", transform: align => Parser.alignmentListToFull(align)},
-					ac: {name: "AC", transform: ac => Parser.acToFull(ac)},
-					hp: {name: "HP", transform: hp => Renderer.monster.getRenderedHp(hp)},
+					ac: {name: "AC", transform: ac => ac != null ? Parser.acToFull(ac) : ""},
+					hp: {name: "HP", transform: hp => hp != null ? Renderer.monster.getRenderedHp(hp) : ""},
 					_speed: {name: "Speed", transform: mon => Parser.getSpeedString(mon)},
 					...Parser.ABIL_ABVS.mergeMap(ab => ({[ab]: {name: Parser.attAbvToFull(ab)}})),
 					_save: {name: "Saving Throws", transform: mon => Renderer.monster.getSavesPart(mon)},
@@ -362,8 +362,6 @@ class BestiaryPage extends ListPageMultiSource {
 					environment: {name: "Environment", transform: it => Renderer.monster.getRenderedEnvironment(it)},
 				},
 			},
-
-			isMarkdownPopout: true,
 			propEntryData: "monster",
 
 			propLoader: "monster",
@@ -436,7 +434,7 @@ class BestiaryPage extends ListPageMultiSource {
 						e_({tag: "span", clazz: `ve-col-1-7 ve-text-center`, text: cr}),
 						e_({
 							tag: "span",
-							clazz: `ve-col-2 ve-text-center ${Parser.sourceJsonToColor(mon.source)} pr-0`,
+							clazz: `ve-col-2 ve-text-center ${Parser.sourceJsonToSourceClassname(mon.source)} pr-0`,
 							style: Parser.sourceJsonToStylePart(mon.source),
 							title: `${Parser.sourceJsonToFull(mon.source)}${Renderer.utils.getSourceSubText(mon)}`,
 							text: source,
@@ -913,14 +911,14 @@ class BestiaryPage extends ListPageMultiSource {
 			};
 
 			// append footer first to be behind buttons
-			const $footer = $(`<div class="mon__token-footer"/>`);
+			const $footer = $(`<div class="mon__token-footer"></div>`);
 			const $wrpFooter = $$`<div class="mon__wrp-token-footer">${$footer}</div>`.hide().appendTo($lnkToken);
 
-			const $btnLeft = $$`<div class="mon__btn-token-cycle mon__btn-token-cycle--left"><span class="glyphicon glyphicon-chevron-left"/></div>`
+			const $btnLeft = $$`<div class="mon__btn-token-cycle mon__btn-token-cycle--left"><span class="glyphicon glyphicon-chevron-left"></span></div>`
 				.click(evt => handleClick(evt, -1)).appendTo($lnkToken)
 				.hide();
 
-			const $btnRight = $$`<div class="mon__btn-token-cycle mon__btn-token-cycle--right"><span class="glyphicon glyphicon-chevron-right"/></div>`
+			const $btnRight = $$`<div class="mon__btn-token-cycle mon__btn-token-cycle--right"><span class="glyphicon glyphicon-chevron-right"></span></div>`
 				.click(evt => handleClick(evt, 1)).appendTo($lnkToken);
 		}
 	}
@@ -943,15 +941,6 @@ class BestiaryPage extends ListPageMultiSource {
 		const loadTotal = toLoad.length;
 		if (loadTotal) {
 			await Promise.all(toLoad.map(src => this._pLoadSource(src, "yes")));
-		}
-	}
-
-	async pHandleUnknownHash (link, sub) {
-		const src = Object.keys(this._loadedSources)
-			.find(src => src.toLowerCase() === (UrlUtil.decodeHash(link)[1] || "").toLowerCase());
-		if (src) {
-			await this._pLoadSource(src, "yes");
-			Hist.hashChange();
 		}
 	}
 
