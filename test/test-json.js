@@ -1,4 +1,4 @@
-import * as fs from "fs";
+import fs from "fs";
 
 import {Um, Uf, JsonTester} from "5etools-utils";
 
@@ -31,6 +31,7 @@ async function main () {
 			return relativeFilePath;
 		},
 	});
+	await jsonTester.pInit();
 
 	const fileList = Uf.listJsonFiles("data")
 		.filter(filePath => {

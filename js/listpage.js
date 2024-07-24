@@ -295,6 +295,10 @@ class SublistManager {
 				"Download JSON Data",
 				() => this._pHandleJsonDownload(),
 			),
+			new ContextUtil.Action(
+				"Download Markdown Data",
+				() => this._pHandleMarkdownDownload(),
+			),
 			null,
 			new ContextUtil.Action(
 				"Copy as Markdown Table",
@@ -418,11 +422,11 @@ class SublistManager {
 		await this.pDoSublistRemove({entity, doFinalize: true});
 	}
 
-	getTitleBtnAdd () { return `Add (SHIFT for ${this._shiftCountAddSubtract})`; }
-	getTitleBtnSubtract () { return `Subtract (SHIFT for ${this._shiftCountAddSubtract})`; }
+	getTitleBtnAdd () { return `Add (SHIFT for ${this._shiftCountAddSubtract}) (Hotkey: p)`; }
+	getTitleBtnSubtract () { return `Subtract (SHIFT for ${this._shiftCountAddSubtract}) (Hotkey: P)`; }
 
-	async pHandleClick_btnAdd ({evt, entity}) {
-		const addCount = evt.shiftKey ? this._shiftCountAddSubtract : 1;
+	async pHandleClick_btnAdd ({entity, isMultiple = false}) {
+		const addCount = isMultiple ? this._shiftCountAddSubtract : 1;
 		return this.pDoSublistAdd({
 			index: Hist.lastLoadedId,
 			entity,
@@ -431,8 +435,8 @@ class SublistManager {
 		});
 	}
 
-	async pHandleClick_btnSubtract ({evt, entity}) {
-		const subtractCount = evt.shiftKey ? this._shiftCountAddSubtract : 1;
+	async pHandleClick_btnSubtract ({entity, isMultiple = false}) {
+		const subtractCount = isMultiple ? this._shiftCountAddSubtract : 1;
 		return this.pDoSublistSubtract({
 			index: Hist.lastLoadedId,
 			entity,
@@ -461,6 +465,27 @@ class SublistManager {
 		const entities = await this.getPinnedEntities();
 		entities.forEach(ent => DataUtil.cleanJson(MiscUtil.copyFast(ent)));
 		DataUtil.userDownload(`${this._getDownloadName()}-data`, entities);
+	}
+
+	async _pHandleMarkdownDownload () {
+		const entities = await this.getPinnedEntities();
+
+		const markdown = entities
+			.map(ent => {
+				return RendererMarkdown.get().render({
+					entries: [
+						{
+							type: "statblockInline",
+							dataType: ent.__prop,
+							data: ent,
+						},
+					],
+				})
+					.trim();
+			})
+			.join("\n\n---\n\n");
+
+		DataUtil.userDownloadText(`${this._getDownloadName()}.md`, markdown);
 	}
 
 	async _pHandleCopyAsMarkdownTable () {
@@ -978,7 +1003,7 @@ class ListPage {
 	 * @param [opts.prereleaseDataSource] Function to fetch prerelease data.
 	 * @param [opts.brewDataSource] Function to fetch brew data.
 	 * @param [opts.pFnGetFluff] Function to fetch fluff for a given entity.
-	 * @param [opts.pageFilter] PageFilter implementation for this page. (Either `filters` and `filterSource` or
+	 * @param [opts.pageFilter] PageFilterBase implementation for this page. (Either `filters` and `filterSource` or
 	 * `pageFilter` must be specified.)
 	 * @param opts.listOptions Other list options.
 	 * @param opts.dataProps JSON data propert(y/ies).
@@ -994,8 +1019,6 @@ class ListPage {
 	 * @param [opts.hasAudio] True if the entities have pronunciation audio.
 	 * @param [opts.isPreviewable] True if the entities can be previewed in-line as part of the list.
 	 * @param [opts.isLoadDataAfterFilterInit] If the order of data loading and filter-state loading should be flipped.
-	 * @param [opts.isBindHashHandlerUnknown] If the "unknown hash" handler function should be bound.
-	 * @param [opts.isMarkdownPopout] If the sublist Popout button supports Markdown on CTRL.
 	 * @param [opts.propEntryData]
 	 * @param [opts.listSyntax]
 	 * @param [opts.compSettings]
@@ -1012,9 +1035,7 @@ class ListPage {
 		this._tableViewOptions = opts.tableViewOptions;
 		this._hasAudio = opts.hasAudio;
 		this._isPreviewable = opts.isPreviewable;
-		this._isMarkdownPopout = !!opts.isMarkdownPopout;
 		this._isLoadDataAfterFilterInit = !!opts.isLoadDataAfterFilterInit;
-		this._isBindHashHandlerUnknown = !!opts.isBindHashHandlerUnknown;
 		this._propEntryData = opts.propEntryData;
 		this._listSyntax = opts.listSyntax || new ListUiUtil.ListSyntax({fnGetDataList: () => this._dataList, pFnGetFluff: opts.pFnGetFluff});
 		this._compSettings = opts.compSettings ? opts.compSettings : null;
@@ -1076,7 +1097,7 @@ class ListPage {
 
 		this._pOnLoad_initVisibleItemsDisplay();
 
-		if (this._filterBox) this._filterBox.on(FilterBox.EVNT_VALCHANGE, this.handleFilterChange.bind(this));
+		if (this._filterBox) this._filterBox.on(FILTER_BOX_EVNT_VALCHANGE, this.handleFilterChange.bind(this));
 
 		if (this._sublistManager) {
 			if (this._sublistManager.isSublistItemsCountable) {
@@ -1103,10 +1124,9 @@ class ListPage {
 		this._pOnLoad_bookView();
 		this._pOnLoad_tableView();
 
-		// bind hash-change functions for hist.js to use
-		window.loadHash = this.pDoLoadHash.bind(this);
-		window.loadSubHash = this.pDoLoadSubHash.bind(this);
-		if (this._isBindHashHandlerUnknown) window.pHandleUnknownHash = this.pHandleUnknownHash.bind(this);
+		Hist.setFnLoadHash(this.pDoLoadHash.bind(this));
+		Hist.setFnLoadSubhash(this.pDoLoadSubHash.bind(this));
+		Hist.setFnHandleUnknownHash(this.pHandleUnknownHash.bind(this));
 
 		this.primaryLists.forEach(list => list.init());
 		if (this._sublistManager) this._sublistManager.init();
@@ -1170,7 +1190,11 @@ class ListPage {
 
 	_pOnLoad_bindMiscButtons () {
 		const $btnReset = $("#reset");
-		ManageBrewUi.bindBtnOpen($(`#manage-brew`));
+		// TODO(MODULES) refactor
+		import("./utils-brew/utils-brew-ui-manage.js")
+			.then(({ManageBrewUi}) => {
+				ManageBrewUi.bindBtngroupManager(e_({id: "btngroup-manager"}));
+			});
 		this._renderListFeelingLucky({$btnReset});
 		this._renderListShowHide({
 			$wrpList: $(`#listcontainer`),
@@ -1406,13 +1430,13 @@ class ListPage {
 	_bindPopoutButton () {
 		this._getOrTabRightButton(`popout`, `new-window`)
 			.off("click")
-			.title(`Popout Window (SHIFT for Source Data${this._isMarkdownPopout ? `; CTRL for Markdown Render` : ""})`)
+			.title(`Popout Window (SHIFT for Source Data; CTRL for Markdown Render)`)
 			.on(
 				"click",
 				(evt) => {
 					if (Hist.lastLoadedId === null) return;
 
-					if (this._isMarkdownPopout && (EventUtil.isCtrlMetaKey(evt))) return this._bindPopoutButton_doShowMarkdown(evt);
+					if (EventUtil.isCtrlMetaKey(evt)) return this._bindPopoutButton_doShowMarkdown(evt);
 					return this._bindPopoutButton_doShowStatblock(evt);
 				},
 			);
@@ -1543,7 +1567,7 @@ class ListPage {
 
 			const key = EventUtil.getKeyIgnoreCapsLock(evt);
 			switch (key) {
-				// K up; J down
+				// k up; j down
 				case "k":
 				case "j": {
 					// don't switch if the user is typing somewhere else
@@ -1552,6 +1576,24 @@ class ListPage {
 					return;
 				}
 
+				// p: toggle pinned/add 1 to sublist
+				case "p": {
+					if (EventUtil.isInInput(evt)) return;
+					if (!this._sublistManager) return;
+					if (this._sublistManager.isSublistItemsCountable) this._sublistManager.pHandleClick_btnAdd({entity: this._lastRender.entity}).then(null);
+					else this._sublistManager.pHandleClick_btnPin({entity: this._lastRender.entity}).then(null);
+					return;
+				}
+				// P: toggle pinned/remove 1 from sublist
+				case "P": {
+					if (EventUtil.isInInput(evt)) return;
+					if (!this._sublistManager) return;
+					if (this._sublistManager.isSublistItemsCountable) this._sublistManager.pHandleClick_btnSubtract({entity: this._lastRender.entity}).then(null);
+					else this._sublistManager.pHandleClick_btnPin({entity: this._lastRender.entity}).then(null);
+					return;
+				}
+
+				// m: expand/collapse current selection
 				case "m": {
 					if (EventUtil.isInInput(evt)) return;
 					const it = Hist.getSelectedListElementWithLocation();
@@ -1711,21 +1753,21 @@ class ListPage {
 		this._getOrTabRightButton(`pin`, `pushpin`)
 			.off("click")
 			.on("click", () => this._sublistManager.pHandleClick_btnPin({entity: this._lastRender.entity}))
-			.title("Pin (Toggle)");
+			.title("Pin (Toggle) (Hotkey: p/P)");
 	}
 
 	_bindAddButton () {
 		this._getOrTabRightButton(`sublist-add`, `plus`)
 			.off("click")
 			.title(this._sublistManager.getTitleBtnAdd())
-			.on("click", evt => this._sublistManager.pHandleClick_btnAdd({evt, entity: this._lastRender.entity}));
+			.on("click", evt => this._sublistManager.pHandleClick_btnAdd({entity: this._lastRender.entity, isMultiple: !!evt.shiftKey}));
 	}
 
 	_bindSubtractButton () {
 		this._getOrTabRightButton(`sublist-subtract`, `minus`)
 			.off("click")
 			.title(this._sublistManager.getTitleBtnSubtract())
-			.on("click", evt => this._sublistManager.pHandleClick_btnSubtract({evt, entity: this._lastRender.entity}));
+			.on("click", evt => this._sublistManager.pHandleClick_btnSubtract({entity: this._lastRender.entity, isMultiple: !!evt.shiftKey}));
 	}
 
 	/**
@@ -1861,7 +1903,41 @@ class ListPage {
 	}
 
 	getListItem () { throw new Error(`Unimplemented!`); }
-	pHandleUnknownHash () { throw new Error(`Unimplemented!`); }
+
+	async pHandleUnknownHash (link, sub) {
+		const locStart = window.location.hash;
+
+		const {source} = UrlUtil.autoDecodeHash(link);
+
+		// If the source is from prerelease/homebrew which has been loaded in the background but is
+		//   not yet displayed, reload to refresh the list.
+		if (this._pHandleUnknownHash_doSourceReload({source})) return true;
+
+		// Otherwise, try to find the source in prerelease/homebrew, load it, and reload
+		const loaded = await DataLoader.pCacheAndGetHash(UrlUtil.getCurrentPage(), link, {isSilent: true});
+		if (!loaded) return false;
+
+		// If navigation has occurred while we were loading the hash, bail out
+		if (locStart !== window.location.hash) return false;
+
+		return this._pHandleUnknownHash_doSourceReload({source});
+	}
+
+	_pHandleUnknownHash_doSourceReload ({source}) {
+		return [
+			PrereleaseUtil,
+			BrewUtil2,
+		]
+			.some(brewUtil => {
+				if (
+					brewUtil.hasSourceJson(source)
+					&& brewUtil.isReloadRequired()
+				) {
+					brewUtil.doLocationReload();
+					return true;
+				}
+			});
+	}
 
 	async pDoLoadSubHash (sub, {lockToken} = {}) {
 		try {
@@ -2006,7 +2082,7 @@ class ListPage {
 		];
 		const menu = ContextUtil.getMenu(actions);
 
-		const $btnOptions = $(`<button class="btn btn-default btn-xs btn-stats-name" title="Other Options"><span class="glyphicon glyphicon-option-vertical"/></button>`)
+		const $btnOptions = $(`<button class="btn btn-default btn-xs btn-stats-name" title="Other Options"><span class="glyphicon glyphicon-option-vertical"></span></button>`)
 			.click(evt => ContextUtil.pOpenMenu(evt, menu));
 
 		return $$`<div class="ve-flex-v-center btn-group ml-2">${$btnOptions}</div>`;
@@ -2204,7 +2280,7 @@ class ListPageBookView extends BookModeViewBase {
 
 			if (i < parts.length - 1) {
 				if ((charLimit -= part.length) < 0) {
-					if (RendererMarkdown.getSetting("isAddPageBreaks")) out.push("", "\\pagebreak", "");
+					if (VetoolsConfig.get("markdown", "isAddPageBreaks")) out.push("", "\\pagebreak", "");
 					charLimit = RendererMarkdown.CHARS_PER_PAGE;
 				}
 			}
@@ -2217,13 +2293,13 @@ class ListPageBookView extends BookModeViewBase {
 		const $btnDownloadMarkdown = $(`<button class="btn btn-default btn-sm">Download as Markdown</button>`)
 			.click(() => DataUtil.userDownloadText(`${UrlUtil.getCurrentPage().replace(".html", "")}.md`, this._getVisibleAsMarkdown()));
 
-		const $btnCopyMarkdown = $(`<button class="btn btn-default btn-sm px-2" title="Copy Markdown to Clipboard"><span class="glyphicon glyphicon-copy"/></button>`)
+		const $btnCopyMarkdown = $(`<button class="btn btn-default btn-sm px-2" title="Copy Markdown to Clipboard"><span class="glyphicon glyphicon-copy"></span></button>`)
 			.click(async () => {
 				await MiscUtil.pCopyTextToClipboard(this._getVisibleAsMarkdown());
 				JqueryUtil.showCopiedEffect($btnCopyMarkdown);
 			});
 
-		const $btnDownloadMarkdownSettings = $(`<button class="btn btn-default btn-sm px-2" title="Markdown Settings"><span class="glyphicon glyphicon-cog"/></button>`)
+		const $btnDownloadMarkdownSettings = $(`<button class="btn btn-default btn-sm px-2" title="Markdown Settings"><span class="glyphicon glyphicon-cog"></span></button>`)
 			.click(async () => RendererMarkdown.pShowSettingsModal());
 
 		return $$`<div class="ve-flex-v-center btn-group ml-3">
